@@ -3,14 +3,14 @@ CudaNestedLoop
 
 This code uses CUDA to parallelize nested loops of the type:
 
-'
+```
 for(int ix=0; ix<Nx; ix++) {
   for(int iy=0; iy<Ny[ix]; iy++) {
     NestedLoopFunction(ix, iy, ...);
 	       ...
-'
+```
 
-where 'Ny[]' is an array in CUDA global memory.
+where Ny[] is an array in CUDA global memory.
 In order to use it:
 1) Install cub from https://nvlabs.github.io/cub/
 2) Add to your code the files nested_loop.cu, nested_loop.h, Ny_th.h,
@@ -33,6 +33,7 @@ A common approach to parallelize a nested loops with two indexes is to use a
 CUDA kernel with threads arranged in a two-dimensional grid of size
 Nx*max(Ny) indexed by ix and iy
 
+```
 __global__ void SimpleNestedLoopKernel(int Nx, int *Ny)
 {
   int ix = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -41,9 +42,11 @@ __global__ void SimpleNestedLoopKernel(int Nx, int *Ny)
     NestedLoopFunction(ix, iy, ...);
   }
 }
+```
 
 The host code could be a function like the following one:
 
+```
 int SimpleNestedLoop(int Nx, int *d_Ny, int max_Ny)
 {
   dim3 threadsPerBlock(block_dim_x_, block_dim_y_);  // block size
@@ -54,6 +57,7 @@ int SimpleNestedLoop(int Nx, int *d_Ny, int max_Ny)
 
   return 0;
 }
+```
 
 where d_Ny is the array Ny[ix] stored in CUDA global memory and max_Ny
 is its maximum value.
