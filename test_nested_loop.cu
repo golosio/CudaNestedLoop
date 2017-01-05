@@ -158,14 +158,17 @@ int main(int argc, char*argv[])
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
   
-  int n_iter = 100;
+  long n_iter = (1000000000l/Nx/Ny_max);
+  if (n_iter<1) n_iter=1;
+  if (n_iter>1000) n_iter=1000;
+
   float frame1D_nested_loop_time = 0;
   float frame2D_nested_loop_time = 0;
   float smart1D_nested_loop_time = 0;
   float smart2D_nested_loop_time = 0;
   float simple_nested_loop_time = 0;
   
-  for (int i_iter=0; i_iter<n_iter; i_iter++) {
+  for (long i_iter=0; i_iter<n_iter; i_iter++) {
     SetNy(Nx, Ny_max, h_Ny, k);
     cudaMemcpy(d_Ny, h_Ny, Nx*sizeof(int), cudaMemcpyHostToDevice);
 

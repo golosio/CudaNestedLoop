@@ -21,7 +21,6 @@ namespace NestedLoop
   extern int block_dim_x_;
   extern int block_dim_y_;
   extern int frame_area_;
-  extern int area_th_;
   extern float x_lim_;
   extern const int Ny_arr_size_;
   extern int Ny_th_arr_[];

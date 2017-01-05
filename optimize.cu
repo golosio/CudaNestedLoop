@@ -61,7 +61,6 @@ int main(int argc, char*argv[])
   CudaSafeCall(cudaMalloc(&d_Ny, Nx_max*sizeof(int)));
   
   NestedLoop::Init();
-  NestedLoop::area_th_ = 0;
   NestedLoop::frame_area_ = 50000000;
   NestedLoop::x_lim_ = 0.75;
   for (int i_Ny=0; i_Ny<NestedLoop::Ny_arr_size_; i_Ny++) {

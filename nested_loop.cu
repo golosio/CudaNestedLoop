@@ -45,7 +45,6 @@ namespace NestedLoop
   int block_dim_x_;
   int block_dim_y_;
   int frame_area_;
-  int area_th_;
   float x_lim_;
 }
 
@@ -127,7 +126,6 @@ int NestedLoop::Init(int Nx_max)
 
   block_dim_x_ = 32;
   block_dim_y_ = 32;
-  area_th_ = 100000000;
   frame_area_ = 65536*64;
   x_lim_ = 0.75;
   Nx_max_ = Nx_max;
