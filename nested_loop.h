@@ -30,6 +30,8 @@ namespace NestedLoop
   int Run(int Nx, int *d_Ny);
   int SimpleNestedLoop(int Nx, int *d_Ny);
   int SimpleNestedLoop(int Nx, int *d_Ny, int max_Ny);
+  int ParallelInnerNestedLoop(int Nx, int *d_Ny);
+  int ParallelOuterNestedLoop(int Nx, int *d_Ny);
   int Frame1DNestedLoop(int Nx, int *d_Ny);
   int Frame2DNestedLoop(int Nx, int *d_Ny);
   int Smart1DNestedLoop(int Nx, int *d_Ny);

@@ -59,6 +59,27 @@ __global__ void SimpleNestedLoopKernel(int Nx, int *Ny)
 }
 
 //////////////////////////////////////////////////////////////////////
+__global__ void  ParallelInnerNestedLoopKernel(int ix, int Ny)
+{
+  int iy = threadIdx.x + blockIdx.x * blockDim.x;
+  if (iy<Ny) {
+    NestedLoopFunction(ix, iy, 2);
+  }
+}
+
+//////////////////////////////////////////////////////////////////////
+__global__ void  ParallelOuterNestedLoopKernel(int Nx, int *d_Ny)
+{
+  int ix = threadIdx.x + blockIdx.x * blockDim.x;
+  if (ix<Nx) {
+    for (int iy=0; iy<d_Ny[ix]; iy++) {
+      NestedLoopFunction(ix, iy, 2);
+    }
+  }
+}
+
+
+//////////////////////////////////////////////////////////////////////
 __global__ void Frame1DNestedLoopKernel(int ix0, int dim_x, int dim_y,
 					int *sorted_idx, int *sorted_Ny)
 {
@@ -180,6 +201,7 @@ int NestedLoop::SimpleNestedLoop(int Nx, int *d_Ny)
 			  cudaMemcpyDeviceToHost));
   return SimpleNestedLoop(Nx, d_Ny, max_Ny);
 }
+
 //////////////////////////////////////////////////////////////////////
 int NestedLoop::SimpleNestedLoop(int Nx, int *d_Ny, int max_Ny)
 {
@@ -190,6 +212,27 @@ int NestedLoop::SimpleNestedLoop(int Nx, int *d_Ny, int max_Ny)
   SimpleNestedLoopKernel <<<numBlocks,threadsPerBlock>>>(Nx, d_Ny);
   cudaDeviceSynchronize();
   CudaCheckError();
+  
+  return 0;
+}
+
+//////////////////////////////////////////////////////////////////////
+int NestedLoop::ParallelInnerNestedLoop(int Nx, int *d_Ny)
+{
+  for (int ix=0; ix<Nx; ix++) {
+    int Ny;
+    CudaSafeCall(cudaMemcpy(&Ny, &d_Ny[ix], sizeof(int),
+			    cudaMemcpyDeviceToHost));
+    ParallelInnerNestedLoopKernel<<<(Ny+1023)/1024, 1024>>>(ix, Ny);
+  }
+  
+  return 0;
+}
+
+//////////////////////////////////////////////////////////////////////
+int NestedLoop::ParallelOuterNestedLoop(int Nx, int *d_Ny)
+{
+  ParallelOuterNestedLoopKernel<<<(Nx+1023)/1024, 1024>>>(Nx, d_Ny);
   
   return 0;
 }

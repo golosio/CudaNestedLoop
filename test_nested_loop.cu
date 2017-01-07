@@ -153,6 +153,38 @@ int main(int argc, char*argv[])
   }
   printf("OK\n\n");
 
+  printf("Testing ParallelInnerNestedLoop...\n");
+  cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+  
+  NestedLoop::ParallelInnerNestedLoop(Nx, d_Ny);
+
+  cudaMemcpy(h_test_array, d_test_array, Nx_max*sizeof(int),
+	     cudaMemcpyDeviceToHost);
+
+  for(int ix=0; ix<Nx_max; ix++) {
+    if (h_test_array[ix] != ref_array[ix]) {
+      printf("ParallelInnerNestedLoop error at ix = %d\n", ix);
+      exit(-1);
+    }
+  }
+  printf("OK\n\n");
+
+  printf("Testing ParallelOuterNestedLoop...\n");
+  cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+  
+  NestedLoop::ParallelOuterNestedLoop(Nx, d_Ny);
+
+  cudaMemcpy(h_test_array, d_test_array, Nx_max*sizeof(int),
+	     cudaMemcpyDeviceToHost);
+
+  for(int ix=0; ix<Nx_max; ix++) {
+    if (h_test_array[ix] != ref_array[ix]) {
+      printf("ParallelOuterNestedLoop error at ix = %d\n", ix);
+      exit(-1);
+    }
+  }
+  printf("OK\n\n");
+
   printf("Evaluating execution time...\n");
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
@@ -167,6 +199,8 @@ int main(int argc, char*argv[])
   float smart1D_nested_loop_time = 0;
   float smart2D_nested_loop_time = 0;
   float simple_nested_loop_time = 0;
+  float parall_in_nested_loop_time = 0;
+  float parall_out_nested_loop_time = 0;
   
   for (long i_iter=0; i_iter<n_iter; i_iter++) {
     SetNy(Nx, Ny_max, h_Ny, k);
@@ -216,18 +250,41 @@ int main(int argc, char*argv[])
     milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
     simple_nested_loop_time += milliseconds;
+
+    cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+    cudaEventRecord(start);
+    NestedLoop::ParallelInnerNestedLoop(Nx, d_Ny);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    parall_in_nested_loop_time += milliseconds;
+
+    cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+    cudaEventRecord(start);
+    NestedLoop::ParallelOuterNestedLoop(Nx, d_Ny);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    parall_out_nested_loop_time += milliseconds;
   }
   frame1D_nested_loop_time = frame1D_nested_loop_time / n_iter;
   frame2D_nested_loop_time = frame2D_nested_loop_time / n_iter;
   smart1D_nested_loop_time = smart1D_nested_loop_time / n_iter;
   smart2D_nested_loop_time = smart2D_nested_loop_time / n_iter;  
   simple_nested_loop_time = simple_nested_loop_time / n_iter;
+  parall_in_nested_loop_time = parall_in_nested_loop_time / n_iter;
   
   printf ("Frame1DNestedLoop average time: %f ms\n", frame1D_nested_loop_time);
   printf ("Frame2DNestedLoop average time: %f ms\n", frame2D_nested_loop_time);
   printf ("Smart1DNestedLoop average time: %f ms\n", smart1D_nested_loop_time);
   printf ("Smart2DNestedLoop average time: %f ms\n", smart2D_nested_loop_time);
   printf ("SimpleNestedLoop average time: %f ms\n", simple_nested_loop_time);
+  printf ("ParallelInnerNestedLoop average time: %f ms\n",
+  	 parall_in_nested_loop_time);
+  printf ("ParallelOuterNestedLoop average time: %f ms\n",
+  	 parall_out_nested_loop_time);
   
   return 0;
 }
