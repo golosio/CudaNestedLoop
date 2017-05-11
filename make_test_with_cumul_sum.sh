@@ -1,0 +1,1 @@
+nvcc -I /usr/local/cub-1.6.4/ -I /usr/local/cub-1.6.4/test/ -I $CUDA_SAMPLES//6_Advanced/scan/ -I $CUDA_SAMPLES/common/inc/ -o test_with_cumul_sum test_nested_loop.cu nested_loop.cu prefix_scan.cu scan_tmp.cu -lm --relocatable-device-code true

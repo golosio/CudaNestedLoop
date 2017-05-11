@@ -46,6 +46,12 @@ namespace NestedLoop
   int block_dim_y_;
   int frame_area_;
   float x_lim_;
+
+#ifdef WITH_CUMUL_SUM
+  PrefixScan prefix_scan_;
+  uint *d_Ny_cumul_sum_;
+#endif
+   
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -134,6 +140,35 @@ __global__ void Smart2DNestedLoopKernel(int ix0, int iy0, int dim_x,
   }
 }
 
+#ifdef WITH_CUMUL_SUM
+__device__ int locate(uint val, uint *data, int n)
+{
+  int i_left = 0;
+  int i_right = n-1;
+  int i = (i_left+i_right)/2;
+  while(i_right-i_left>1) {
+    if (data[i] > val) i_right = i;
+    else if (data[i]<val) i_left = i;
+    else break;
+    i=(i_left+i_right)/2;
+  }
+
+  return i;
+}
+
+__global__ void CumulSumNestedLoopKernel(int Nx, uint *Ny_cumul_sum,
+					 uint Ny_sum)
+{
+  uint blockId   = blockIdx.y * gridDim.x + blockIdx.x;
+  uint array_idx = blockId * blockDim.x + threadIdx.x;
+  if (array_idx<Ny_sum) {
+    int ix = locate(array_idx, Ny_cumul_sum, Nx + 1);
+    int iy = (int)(array_idx - Ny_cumul_sum[ix]);
+    NestedLoopFunction(ix, iy, 2);
+  }
+}
+#endif
+
 //////////////////////////////////////////////////////////////////////
 int NestedLoop::Init()
 {
@@ -180,6 +215,12 @@ int NestedLoop::Init(int Nx_max)
   // Allocate temporary storage
   CudaSafeCall(cudaMalloc(&d_sort_storage_, sort_storage_bytes_));
   CudaSafeCall(cudaMalloc(&d_reduce_storage_, reduce_storage_bytes_));
+
+#ifdef WITH_CUMUL_SUM
+  prefix_scan_.Init();
+  CudaSafeCall(cudaMalloc(&d_Ny_cumul_sum_,
+			  PrefixScan::AllocSize*sizeof(uint)));
+#endif
   
   return 0;
 }
@@ -224,7 +265,10 @@ int NestedLoop::ParallelInnerNestedLoop(int Nx, int *d_Ny)
     CudaSafeCall(cudaMemcpy(&Ny, &d_Ny[ix], sizeof(int),
 			    cudaMemcpyDeviceToHost));
     ParallelInnerNestedLoopKernel<<<(Ny+1023)/1024, 1024>>>(ix, Ny);
+    // CudaCheckError(); // uncomment only for debugging
   }
+  cudaDeviceSynchronize();
+  CudaCheckError();
   
   return 0;
 }
@@ -233,6 +277,8 @@ int NestedLoop::ParallelInnerNestedLoop(int Nx, int *d_Ny)
 int NestedLoop::ParallelOuterNestedLoop(int Nx, int *d_Ny)
 {
   ParallelOuterNestedLoopKernel<<<(Nx+1023)/1024, 1024>>>(Nx, d_Ny);
+  cudaDeviceSynchronize();
+  CudaCheckError();
   
   return 0;
 }
@@ -272,30 +318,29 @@ int NestedLoop::Frame1DNestedLoop(int Nx, int *d_Ny)
 int NestedLoop::Frame2DNestedLoop(int Nx, int *d_Ny)
 {
   if (Nx <= 0) return 0;
-  
-  int dim_x, dim_y;
-
-  // Run sorting operation
+  // Sort the pairs (ix, Ny) with ix=0,..,Nx-1 in ascending order of Ny.
+  // After the sorting operation, d_sorted_idx_ are the reordered indexes ix
+  // and d_sorted_Ny_ are the sorted values of Ny 
   cub::DeviceRadixSort::SortPairs(d_sort_storage_, sort_storage_bytes_,
 				  d_Ny, d_sorted_Ny_, d_idx_, d_sorted_idx_,
-				  Nx);
-  
-  int ix0 = Nx;
+				  Nx);  
+  int ix0 = Nx;	      // proceeds from right to left
   while(ix0>0) {
+    int dim_x, dim_y;  // width and height of the rectangular frame
     CudaSafeCall(cudaMemcpy(&dim_y, &d_sorted_Ny_[ix0-1], sizeof(int),
 			    cudaMemcpyDeviceToHost));
     if (dim_y < 1) dim_y = 1;
-    dim_x = (frame_area_ - 1) / dim_y + 1;
-    ix0 -= dim_x;
+    // frame_area_ is the fixed value of the the rectangular frame area
+    dim_x = (frame_area_ - 1) / dim_y + 1; // width of the rectangular frame
+    ix0 -= dim_x; // update the index value
     if (ix0<0) {
-      dim_x += ix0;
+      dim_x += ix0;  // adjust the width if ix0<0 
       ix0 = 0;
-    }
-    
+    }    
     dim3 threadsPerBlock(block_dim_x_, block_dim_y_);  // block size
-    
     dim3 numBlocks((dim_x - 1)/threadsPerBlock.x + 1,
 		   (dim_y - 1)/threadsPerBlock.y + 1);
+    // run a nested loop kernel on the rectangular frame
     Frame2DNestedLoopKernel <<<numBlocks,threadsPerBlock>>>
       (ix0, dim_x, dim_y, d_sorted_idx_, d_sorted_Ny_);
 
@@ -460,3 +505,37 @@ int NestedLoop::Smart2DNestedLoop(int Nx, int *d_Ny)
   return 0;
 }
 
+//////////////////////////////////////////////////////////////////////
+#ifdef WITH_CUMUL_SUM
+int NestedLoop::CumulSumNestedLoop(int Nx, int *d_Ny)
+{
+  prefix_scan_.Scan(d_Ny_cumul_sum_, (uint*)d_Ny, Nx);
+  uint Ny_sum;
+  CudaSafeCall(cudaMemcpy(&Ny_sum, &d_Ny_cumul_sum_[Nx],
+			  sizeof(uint), cudaMemcpyDeviceToHost));
+  //printf("Ny_sum %u\n", Ny_sum);
+  if(Ny_sum>0) {
+    uint grid_dim_x, grid_dim_y;
+    if (Ny_sum<65536*1024) { // max grid dim * max block dim
+      grid_dim_x = (Ny_sum+1023)/1024;
+      grid_dim_y = 1;
+    }
+    else {
+      grid_dim_x = 64; // I think it's not necessary to increase it
+      if (Ny_sum>grid_dim_x*1024*65535) {
+	printf("Ny sum %d larger than threshold %d\n",
+	       Ny_sum, grid_dim_x*1024*65535);
+	exit(-1);
+      }
+      grid_dim_y = (Ny_sum + grid_dim_x*1024 -1) / (grid_dim_x*1024);
+    }
+    dim3 numBlocks(grid_dim_x, grid_dim_y);
+    CumulSumNestedLoopKernel<<<numBlocks, 1024>>>(Nx, d_Ny_cumul_sum_, Ny_sum);
+
+    cudaDeviceSynchronize();
+    CudaCheckError();
+  }
+    
+  return 0;
+}
+#endif

@@ -185,6 +185,24 @@ int main(int argc, char*argv[])
   }
   printf("OK\n\n");
 
+#ifdef WITH_CUMUL_SUM
+  printf("Testing CumulSumNestedLoop...\n");
+  cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+  
+  NestedLoop::CumulSumNestedLoop(Nx, d_Ny);
+
+  cudaMemcpy(h_test_array, d_test_array, Nx_max*sizeof(int),
+	     cudaMemcpyDeviceToHost);
+
+  for(int ix=0; ix<Nx_max; ix++) {
+    if (h_test_array[ix] != ref_array[ix]) {
+      printf("CumulSumNestedLoop error at ix = %d\n", ix);
+      exit(-1);
+    }
+  }
+  printf("OK\n\n");
+#endif
+
   printf("Evaluating execution time...\n");
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
@@ -201,6 +219,9 @@ int main(int argc, char*argv[])
   float simple_nested_loop_time = 0;
   float parall_in_nested_loop_time = 0;
   float parall_out_nested_loop_time = 0;
+#ifdef WITH_CUMUL_SUM
+  float cumul_sum_nested_loop_time = 0;
+#endif
   
   for (long i_iter=0; i_iter<n_iter; i_iter++) {
     SetNy(Nx, Ny_max, h_Ny, k);
@@ -268,6 +289,17 @@ int main(int argc, char*argv[])
     milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
     parall_out_nested_loop_time += milliseconds;
+
+#ifdef WITH_CUMUL_SUM
+    cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+    cudaEventRecord(start);
+    NestedLoop::CumulSumNestedLoop(Nx, d_Ny);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    cumul_sum_nested_loop_time += milliseconds;
+#endif
   }
   frame1D_nested_loop_time = frame1D_nested_loop_time / n_iter;
   frame2D_nested_loop_time = frame2D_nested_loop_time / n_iter;
@@ -275,6 +307,7 @@ int main(int argc, char*argv[])
   smart2D_nested_loop_time = smart2D_nested_loop_time / n_iter;  
   simple_nested_loop_time = simple_nested_loop_time / n_iter;
   parall_in_nested_loop_time = parall_in_nested_loop_time / n_iter;
+  parall_out_nested_loop_time = parall_out_nested_loop_time / n_iter;
   
   printf ("Frame1DNestedLoop average time: %f ms\n", frame1D_nested_loop_time);
   printf ("Frame2DNestedLoop average time: %f ms\n", frame2D_nested_loop_time);
@@ -285,6 +318,12 @@ int main(int argc, char*argv[])
   	 parall_in_nested_loop_time);
   printf ("ParallelOuterNestedLoop average time: %f ms\n",
   	 parall_out_nested_loop_time);
+
+#ifdef WITH_CUMUL_SUM
+  cumul_sum_nested_loop_time = cumul_sum_nested_loop_time / n_iter;
+  printf ("CumulSumNestedLoop average time: %f ms\n",
+	  cumul_sum_nested_loop_time);
+#endif
   
   return 0;
 }

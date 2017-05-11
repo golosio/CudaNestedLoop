@@ -41,8 +41,8 @@ int main(int argc, char*argv[])
   const int N_Ny = NestedLoop::Ny_arr_size_;
   float algo_arr[N_Nx*N_Ny];
 
-  int k_arr[] ={0, 10, 50, 100};
-  int Nk = 4;
+  int k_arr[] ={0, 10, 20, 30, 40, 50};
+  int Nk = 6;
   
   int Nx_max = 65536*1024;
   int Ny_max;
@@ -71,9 +71,11 @@ int main(int argc, char*argv[])
     algo_arr[i] = 1;
   }
 
-  float worst_err = 0;
-  float rmse = 0;
-  int Nmse = 0;
+  //float worst_err = 0;
+  //float rmse = 0;
+  //int Nmse = 0;
+  float mean_t_rel = 0;
+  int n_samples = 0;
   for (int i_Nx=0; i_Nx<N_Nx; i_Nx++) {
     Nx = (int)round(exp((5.0 + i_Nx)/2.0));
     for (int i_Ny=0; i_Ny<N_Ny; i_Ny++) {
@@ -91,19 +93,23 @@ int main(int argc, char*argv[])
       printf ("n_iter: %ld\t", n_iter);
       float frame1D_nested_loop_time = 0;
       float frame2D_nested_loop_time = 0;
+      float simple_nested_loop_time = 0;
+      float parall_in_nested_loop_time = 1.0e20;
+      float parall_out_nested_loop_time = 0;
       float smart1D_nested_loop_time = 0;
       float smart2D_nested_loop_time = 0;
-      float simple_nested_loop_time = 0;
 
-      float t_test[5];
-      float t_worst[5];
-  
+      float t_test[4];
+      
+      float sum_t_rel_k_0 = 0;
+      float sum_t_rel_k_1 = 0;
+      
       for (int ik=0; ik<Nk; ik++) {
 	k = k_arr[ik];
 	for (long i_iter=0; i_iter<n_iter; i_iter++) {
 	  SetNy(Nx, Ny_max, h_Ny, k);
-	  cudaMemcpy(d_Ny, h_Ny, Nx*sizeof(int), cudaMemcpyHostToDevice);
 
+	  cudaMemcpy(d_Ny, h_Ny, Nx*sizeof(int), cudaMemcpyHostToDevice);
 	  cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
 	  cudaEventRecord(start);
 	  NestedLoop::Frame1DNestedLoop(Nx, d_Ny);
@@ -148,70 +154,76 @@ int main(int argc, char*argv[])
 	  milliseconds = 0;
 	  cudaEventElapsedTime(&milliseconds, start, stop);
 	  simple_nested_loop_time += milliseconds;
+
+	  //cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+	  //cudaEventRecord(start);
+	  //NestedLoop::ParallelInnerNestedLoop(Nx, d_Ny);
+	  //cudaEventRecord(stop);
+	  //cudaEventSynchronize(stop);
+	  //milliseconds = 0;
+	  //cudaEventElapsedTime(&milliseconds, start, stop);
+	  //parall_in_nested_loop_time += milliseconds;
+
+	  cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+	  cudaEventRecord(start);
+	  NestedLoop::ParallelOuterNestedLoop(Nx, d_Ny);
+	  cudaEventRecord(stop);
+	  cudaEventSynchronize(stop);
+	  milliseconds = 0;
+	  cudaEventElapsedTime(&milliseconds, start, stop);
+	  parall_out_nested_loop_time += milliseconds;
+
+#ifdef WITH_CUMUL_SUM
+	  cudaMemset(d_test_array, 0, Nx_max*sizeof(int));  
+	  cudaEventRecord(start);
+	  NestedLoop::CumulSumNestedLoop(Nx, d_Ny);
+	  cudaEventRecord(stop);
+	  cudaEventSynchronize(stop);
+	  milliseconds = 0;
+	  cudaEventElapsedTime(&milliseconds, start, stop);
+	  cumul_sum_nested_loop_time += milliseconds;
+#endif
 	}
 	frame1D_nested_loop_time = frame1D_nested_loop_time / n_iter;
 	frame2D_nested_loop_time = frame2D_nested_loop_time / n_iter;
 	smart1D_nested_loop_time = smart1D_nested_loop_time / n_iter;
 	smart2D_nested_loop_time = smart2D_nested_loop_time / n_iter;  
 	simple_nested_loop_time = simple_nested_loop_time / n_iter;
+	//parall_in_nested_loop_time = parall_in_nested_loop_time / n_iter;
+	parall_out_nested_loop_time = parall_out_nested_loop_time / n_iter;
 
-	/*
-	  printf ("Frame1DNestedLoop average time: %f ms\n",
-	  frame1D_nested_loop_time);
-	  printf ("Frame2DNestedLoop average time: %f ms\n",
-	  frame2D_nested_loop_time);
-	  printf ("Smart1DNestedLoop average time: %f ms\n",
-	  smart1D_nested_loop_time);
-	  printf ("Smart2DNestedLoop average time: %f ms\n",
-	  smart2D_nested_loop_time);
-	  printf ("SimpleNestedLoop average time: %f ms\n",
-	  simple_nested_loop_time);
-	*/
+#ifdef WITH_CUMUL_SUM
+	cumul_sum_nested_loop_time = cumul_sum_nested_loop_time / n_iter;
+#endif
+
 	t_test[0] = simple_nested_loop_time;
-	t_test[1] = smart2D_nested_loop_time;
-	t_test[2] = smart1D_nested_loop_time;
+	t_test[1] = parall_in_nested_loop_time;
+	t_test[2] = parall_out_nested_loop_time;
 	t_test[3] = frame2D_nested_loop_time;
-	t_test[4] = frame1D_nested_loop_time;
 	float t_min = 0;
-	for (int i=0; i<5; i++) {
+	for (int i=0; i<4; i++) {
 	  if (i==0 || t_test[i]<t_min) {
 	    t_min = t_test[i];
 	  }
 	}
-	for (int i=0; i<5; i++) {
-	  float t_rel = (t_test[i]-t_min)/t_min;
-	  if (ik==0 || t_rel>t_worst[i]) {
-	    t_worst[i] = t_rel;
-	  }
-	}
+	sum_t_rel_k_0 += simple_nested_loop_time/t_min;
+	sum_t_rel_k_1 += smart2D_nested_loop_time/t_min; 
+	mean_t_rel += smart2D_nested_loop_time/t_min;	
+	n_samples++;
       }
-      //for (int i=0; i<5; i++) {
-      //  printf("%f\n", t_worst[i]);
-      //}
-      float best_algo;
-      float err_best_algo;
-      if (t_worst[0]<t_worst[1]) {
+      int best_algo;
+      if (sum_t_rel_k_0 < sum_t_rel_k_1) {
 	best_algo = 0;
-	err_best_algo = t_worst[0];
       }
       else {
 	best_algo = 1;
-	err_best_algo = t_worst[1];
       }
-      if (fabs(t_worst[0]-t_worst[1])<0.05) best_algo = 0.5;
-      if (err_best_algo>worst_err) {
-	worst_err = err_best_algo;
-      }
-      rmse += err_best_algo*err_best_algo;
-      Nmse++;
-      printf("%d\t%d\t%g\t%f\n", Nx, Ny_max, best_algo, err_best_algo);
+      printf("%d\t%d\t%d\n", Nx, Ny_max, best_algo);
       algo_arr[i_Ny*N_Nx + i_Nx] = best_algo;
     }
   }
-  printf("worst error: %f\n", worst_err);
-  rmse = sqrt(rmse/Nmse);
-  printf("RMSE: %f\n", rmse);
-
+  mean_t_rel /= n_samples;
+  
   FILE *fp=fopen("Ny_th.h", "w");
   fprintf(fp, "  const int Ny_arr_size_ = 24;\n");
   fprintf(fp, "  int Ny_th_arr_[] = {\n");

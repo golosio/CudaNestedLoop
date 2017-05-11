@@ -15,6 +15,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef NESTED_LOOP_H
 #define  NESTED_LOOP_H
 
+//#define WITH_CUMUL_SUM
+#ifdef WITH_CUMUL_SUM
+#include "prefix_scan.h"
+#endif
+
 namespace NestedLoop
 {
   extern int Nx_max_;
@@ -36,6 +41,10 @@ namespace NestedLoop
   int Frame2DNestedLoop(int Nx, int *d_Ny);
   int Smart1DNestedLoop(int Nx, int *d_Ny);
   int Smart2DNestedLoop(int Nx, int *d_Ny);
+  #ifdef WITH_CUMUL_SUM
+  //extern PrefixScan prefix_scan_;
+  int CumulSumNestedLoop(int Nx, int *d_Ny);  
+  #endif
 
   int Free();
 }
